@@ -2,6 +2,7 @@
 extern crate lazy_static;
 extern crate clap;
 use clap::{App, Arg, SubCommand};
+use std::io::Write;
 
 use regex::Regex;
 //use semver::Version;
@@ -44,6 +45,12 @@ struct Configuration {
     git_provider: String,
     repo_name: String,
     tag_template: String,
+}
+
+impl Changelog {
+    fn new() -> Self {
+        Self::default()
+    }
 }
 
 trait MarkdownSerializable {
@@ -195,19 +202,19 @@ fn add_config(changelog: &mut Changelog, line: String) {
         }
     }
 
-    // println!("{}", configuration.to_markdown());
     changelog.configuration = configuration;
 }
 
 fn main() {
     let matches = App::new("CHACHACHA")
-        .about("Does awesome things")
+        .about("\nDoes awesome things")
+        .author("Alessandro -oggei- Ogier <alessandro.ogier@gmail.com>")
         .arg(
-            Arg::with_name("config")
-                .short("c")
-                .long("config")
+            Arg::with_name("filename")
+                .short("f")
+                .long("filename")
                 .value_name("FILE")
-                .help("Sets a custom config file")
+                .help("Sets changelog's path")
                 .takes_value(true),
         )
         .arg(
@@ -215,6 +222,36 @@ fn main() {
                 .short("v")
                 .multiple(true)
                 .help("Sets the level of verbosity"),
+        )
+        .subcommand(
+            SubCommand::with_name("added")
+                .about("Add an 'added' entry")
+                .arg(Arg::with_name("line").help("Line to add").multiple(true)),
+        )
+        .subcommand(
+            SubCommand::with_name("changed")
+                .about("Add a 'changed' entry")
+                .arg(Arg::with_name("line").help("Line to add").multiple(true)),
+        )
+        .subcommand(
+            SubCommand::with_name("deprecated")
+                .about("Add a 'deprecated' entry")
+                .arg(Arg::with_name("line").help("Line to add").multiple(true)),
+        )
+        .subcommand(
+            SubCommand::with_name("fixed")
+                .about("Add a 'fixed' entry")
+                .arg(Arg::with_name("line").help("Line to add").multiple(true)),
+        )
+        .subcommand(
+            SubCommand::with_name("removed")
+                .about("Add a 'removed' entry")
+                .arg(Arg::with_name("line").help("Line to add").multiple(true)),
+        )
+        .subcommand(
+            SubCommand::with_name("security")
+                .about("Add a 'security' entry")
+                .arg(Arg::with_name("line").help("Line to add").multiple(true)),
         )
         .subcommand(
             SubCommand::with_name("init")
@@ -227,16 +264,49 @@ fn main() {
         )
         .get_matches();
 
+    let filename = matches.value_of("filename").unwrap_or("CHANGELOG.md");
+
+    if let Some(matches) = matches.subcommand_matches("init") {
+        let path = Path::new(filename);
+        if path.exists() {
+            if matches.args.contains_key("overwrite") {
+                println!("let's overwrite!");
+                {
+                    let mut f = File::create(filename).unwrap();
+
+                    f.write(b"ciao");
+
+                    f.sync_all();
+                }
+            } else {
+                let error = clap::Error {
+                    message: String::from("File exists and no overwrite flag is set."),
+                    info: None,
+                    kind: clap::ErrorKind::ValueValidation,
+                };
+                clap::Error::exit(&error);
+            }
+        };
+
+        if matches.is_present("init") {
+            println!("initializing");
+            std::process::exit(0);
+        } else {
+            println!("boh: {:#?}", matches.args["overwrite"]);
+            std::process::exit(0);
+        }
+    };
+
     println!("{:?}", matches);
 
-    let mut changelog: Changelog = Default::default();
+    let mut changelog = Changelog::new();
 
     let release_pattern = Regex::new(r"^## \[.*\]( - .*)?$").unwrap();
     let category_pattern = Regex::new(r"^### .*$").unwrap();
     let config_pattern = Regex::new(r"^\[//\]: # .*$").unwrap();
     let nonlink_pattern = Regex::new(r"^- .*$").unwrap();
 
-    if let Ok(lines) = read_lines("CHANGELOG.md") {
+    if let Ok(lines) = read_lines(filename) {
         for raw_line in lines {
             if let Ok(line) = raw_line {
                 if release_pattern.is_match(&line) {
